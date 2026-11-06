@@ -384,17 +384,24 @@ class Docuquest_model extends Model
 
             $email = new \PHPMailer\PHPMailer\PHPMailer(true);
             $email->isSMTP();
-            $email->Host = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+            $email->Host = trim((string) (getenv('SMTP_HOST') ?: 'smtp.gmail.com')) ?: 'smtp.gmail.com';
             $email->SMTPAuth = true;
+            $email->SMTPAutoTLS = true;
+            $email->AuthType = 'LOGIN';
             $email->Username = $username;
             $email->Password = $password;
             $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
             $smtpSecure = strtolower(trim((string) (getenv('SMTP_SECURE') ?: ($smtpPort === 465 ? 'ssl' : 'tls'))));
-            $email->SMTPSecure = $smtpSecure === 'ssl'
-                ? \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
-                : \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            if ($smtpPort === 465 || $smtpSecure === 'ssl') {
+                $smtpPort = 465;
+                $email->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                $email->SMTPAutoTLS = false;
+            } else {
+                $smtpPort = 587;
+                $email->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            }
             $email->Port = $smtpPort;
-            $email->Timeout = 20;
+            $email->Timeout = (int) (getenv('SMTP_TIMEOUT') ?: 30);
             $email->CharSet = 'UTF-8';
             $email->isHTML(true);
             $email->setFrom($username, getenv('MAIL_FROM_NAME') ?: 'DocuQuest');
