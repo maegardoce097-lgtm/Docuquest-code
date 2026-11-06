@@ -556,7 +556,7 @@ class Docuquest_model extends Model
                 . ($certificate ? "Certified PDF: Download the Approved Copy - Certified PDF attached to this email, or download it from the request page.\n" : '')
                 . 'Scheduled release: ' . (($request['status'] ?? '') === 'ready_for_pickup' ? ($release['label'] ?: 'Not scheduled yet.') : 'See the Ready for release notification for the pickup schedule.') . "\n"
                 . 'Sign in: ' . $paymentUrl;
-            $provider = strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'smtp')));
+            $provider = 'smtp';
             error_log('DocuQuest email provider selected: ' . $provider);
             if ($provider === 'resend') {
                 $apiKey = trim((string) (getenv('RESEND_API_KEY') ?: ''));
