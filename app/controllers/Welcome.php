@@ -7,7 +7,11 @@ class Welcome extends Controller
     {
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
-        echo json_encode(['status' => 'ok']);
+        echo json_encode([
+            'status' => 'ok',
+            'email_provider' => strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'smtp'))),
+            'resend_configured' => trim((string) (getenv('RESEND_API_KEY') ?: '')) !== '',
+        ]);
     }
 
     public function index()

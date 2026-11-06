@@ -550,6 +550,7 @@ class Docuquest_model extends Model
                 . 'Scheduled release: ' . (($request['status'] ?? '') === 'ready_for_pickup' ? ($release['label'] ?: 'Not scheduled yet.') : 'See the Ready for release notification for the pickup schedule.') . "\n"
                 . 'Sign in: ' . $paymentUrl;
             $provider = strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'smtp')));
+            error_log('DocuQuest email provider selected: ' . $provider);
             if ($provider === 'resend') {
                 $apiKey = trim((string) (getenv('RESEND_API_KEY') ?: ''));
                 if ($apiKey === '') {
