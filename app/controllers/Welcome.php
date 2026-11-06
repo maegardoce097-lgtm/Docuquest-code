@@ -9,7 +9,7 @@ class Welcome extends Controller
         header('Cache-Control: no-store');
         echo json_encode([
             'status' => 'ok',
-            'email_provider' => strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'smtp'))),
+            'email_provider' => 'smtp',
             'resend_configured' => trim((string) (getenv('RESEND_API_KEY') ?: '')) !== '',
         ]);
     }
