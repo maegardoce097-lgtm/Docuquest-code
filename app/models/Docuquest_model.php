@@ -549,6 +549,56 @@ class Docuquest_model extends Model
                 . ($certificate ? "Certified PDF: Download the Approved Copy - Certified PDF attached to this email, or download it from the request page.\n" : '')
                 . 'Scheduled release: ' . (($request['status'] ?? '') === 'ready_for_pickup' ? ($release['label'] ?: 'Not scheduled yet.') : 'See the Ready for release notification for the pickup schedule.') . "\n"
                 . 'Sign in: ' . $paymentUrl;
+            $provider = strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'smtp')));
+            if ($provider === 'resend') {
+                $apiKey = trim((string) (getenv('RESEND_API_KEY') ?: ''));
+                if ($apiKey === '') {
+                    throw new RuntimeException('RESEND_API_KEY is required when EMAIL_PROVIDER=resend.');
+                }
+
+                $from = trim((string) (getenv('MAIL_FROM_ADDRESS') ?: $username));
+                $fromName = trim((string) (getenv('MAIL_FROM_NAME') ?: 'DocuQuest'));
+                $attachments = [];
+                foreach ($email->getAttachments() as $attachment) {
+                    $attachments[] = [
+                        'filename' => $attachment[1] ?: $attachment[2],
+                        'content' => base64_encode((string) $attachment[0]),
+                    ];
+                }
+
+                $payload = [
+                    'from' => $fromName !== '' ? $fromName . ' <' . $from . '>' : $from,
+                    'to' => [$recipient],
+                    'subject' => $email->Subject,
+                    'html' => $html,
+                    'text' => $email->AltBody,
+                ];
+                if ($attachments) {
+                    $payload['attachments'] = $attachments;
+                }
+
+                $handle = curl_init('https://api.resend.com/emails');
+                curl_setopt_array($handle, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT => 20,
+                    CURLOPT_HTTPHEADER => [
+                        'Authorization: Bearer ' . $apiKey,
+                        'Content-Type: application/json',
+                    ],
+                ]);
+                $response = curl_exec($handle);
+                $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+                curl_close($handle);
+                if (!is_string($response) || $status < 200 || $status >= 300) {
+                    $detail = is_string($response) ? trim($response) : 'No response from Resend.';
+                    throw new RuntimeException('Resend HTTP ' . $status . ': ' . $detail);
+                }
+                return true;
+            }
+
             $email->send();
             return true;
         } catch (Throwable $exception) {

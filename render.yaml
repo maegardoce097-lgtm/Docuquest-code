@@ -57,6 +57,12 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: "587"
+      - key: EMAIL_PROVIDER
+        value: smtp
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
       - key: SMTP_USERNAME
         sync: false
       - key: SMTP_PASSWORD
