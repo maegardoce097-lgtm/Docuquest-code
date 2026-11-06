@@ -441,6 +441,17 @@ class Request_model extends Docuquest_model
                 }
                 $downloadNotice .= '.';
             }
+            $requirementAttachmentNotice = '';
+            if ($status === 'completed') {
+                $completionAttachments = $this->getRequesterRequirementUploads(
+                    (int) $request['id'],
+                    (int) $request['user_id'],
+                    (string) $requirements
+                );
+                if (count($completionAttachments) > 0) {
+                    $requirementAttachmentNotice = ' Uploaded requirement files are attached to the completion email.';
+                }
+            }
             $this->createNotification(
                 (int) $request['user_id'],
                 (int) $request['id'],
@@ -449,7 +460,7 @@ class Request_model extends Docuquest_model
                 . ($status === 'ready_for_pickup' && $releaseAt ? ' Nakatakda ang pagkuha ng dokumento sa ' . $this->manilaReleaseDetails($releaseAt)['label'] . ' Philippine time.' : '')
                 . ($status === 'completed' ? ' Salamat sa pagtitiwala sa DocuQuest.' : '')
                 . (trim((string) ($requirements ?? '')) !== '' ? ' Verified requirements: ' . trim((string) $requirements) . '.' : '')
-                . ($status === 'completed' ? ' Uploaded requirement files are attached to the completion email.' : '')
+                . $requirementAttachmentNotice
                 . $downloadNotice
             );
             $previousRequirements = trim((string) ($request['requirements'] ?? ''));
