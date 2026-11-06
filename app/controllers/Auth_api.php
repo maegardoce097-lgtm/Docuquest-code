@@ -260,8 +260,15 @@ class Auth_api extends Docuquest_api
             return false;
         }
 
-        $requestHost = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
-        $expectedHost = strtolower((string) parse_url('http://' . $requestHost, PHP_URL_HOST));
+        $allowedOrigins = array_filter(array_map('trim', explode(',', (string) (getenv('CORS_ALLOWED_ORIGINS') ?: ''))));
+        $expectedHost = '';
+        foreach ($allowedOrigins as $allowedOrigin) {
+            $originHost = strtolower((string) parse_url($allowedOrigin, PHP_URL_HOST));
+            if ($originHost !== '') {
+                $expectedHost = $originHost;
+                break;
+            }
+        }
         $hostname = strtolower((string) ($result['hostname'] ?? ''));
         $configuredScore = getenv('RECAPTCHA_MIN_SCORE');
         $minimumScore = is_numeric($configuredScore) ? max(0, min(1, (float) $configuredScore)) : 0.5;
