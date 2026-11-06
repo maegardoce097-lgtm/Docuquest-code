@@ -548,7 +548,9 @@ class Docuquest_model extends Model
             $email->send();
             return true;
         } catch (Throwable $exception) {
-            error_log('DocuQuest request update email failed: ' . $exception->getMessage());
+            $mailerError = isset($email) ? trim((string) $email->ErrorInfo) : '';
+            error_log('DocuQuest request update email failed: ' . $exception->getMessage()
+                . ($mailerError !== '' ? ' | SMTP: ' . $mailerError : ''));
             return false;
         }
     }
