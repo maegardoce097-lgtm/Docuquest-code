@@ -388,9 +388,13 @@ class Docuquest_model extends Model
             $email->SMTPAuth = true;
             $email->Username = $username;
             $email->Password = $password;
-            $email->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-            $email->Port = (int) (getenv('SMTP_PORT') ?: 587);
-            $email->Timeout = 10;
+            $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+            $smtpSecure = strtolower(trim((string) (getenv('SMTP_SECURE') ?: ($smtpPort === 465 ? 'ssl' : 'tls'))));
+            $email->SMTPSecure = $smtpSecure === 'ssl'
+                ? \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                : \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $email->Port = $smtpPort;
+            $email->Timeout = 20;
             $email->CharSet = 'UTF-8';
             $email->isHTML(true);
             $email->setFrom($username, getenv('MAIL_FROM_NAME') ?: 'DocuQuest');
