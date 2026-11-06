@@ -119,7 +119,7 @@ class Payment_api extends Docuquest_api
             }
         }
 
-        $baseUrl = rtrim((string) config_item('base_url'), '/');
+        $baseUrl = rtrim((string) (getenv('FRONTEND_BASE_URL') ?: config_item('base_url')), '/');
         $returnPath = '/?payment=success&request_id=' . (int) $request['id'] . '#requests';
         $paymentMethods = config_item('paymongo_payment_methods');
         if (!is_array($paymentMethods) || !$paymentMethods) {
