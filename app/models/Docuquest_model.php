@@ -604,6 +604,7 @@ class Docuquest_model extends Model
                 $response = curl_exec($handle);
                 $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
                 curl_close($handle);
+                error_log('DocuQuest Brevo response: HTTP ' . $status . ' ' . (is_string($response) ? $response : 'no response'));
                 if (!is_string($response) || $status < 200 || $status >= 300) {
                     $detail = is_string($response) ? trim($response) : 'No response from Brevo.';
                     throw new RuntimeException('Brevo HTTP ' . $status . ': ' . $detail);
