@@ -377,7 +377,7 @@ class Docuquest_model extends Model
 
         try {
             $username = trim(getenv('SMTP_USERNAME') ?: '');
-            $password = getenv('SMTP_PASSWORD') ?: '';
+            $password = preg_replace('/\s+/', '', getenv('SMTP_PASSWORD') ?: '');
             if ($username === '' || $password === '') {
                 throw new RuntimeException('SMTP_USERNAME and SMTP_PASSWORD are required.');
             }
