@@ -10,6 +10,11 @@ class Welcome extends Controller
         echo json_encode([
             'status' => 'ok',
             'email_provider' => 'smtp',
+            'smtp_configured' => trim((string) (getenv('SMTP_USERNAME') ?: '')) !== ''
+                && trim((string) (getenv('SMTP_PASSWORD') ?: '')) !== '',
+            'smtp_host' => trim((string) (getenv('SMTP_HOST') ?: 'smtp.gmail.com')) ?: 'smtp.gmail.com',
+            'smtp_port' => (int) (getenv('SMTP_PORT') ?: 587),
+            'smtp_secure' => strtolower(trim((string) (getenv('SMTP_SECURE') ?: 'tls'))),
             'resend_configured' => trim((string) (getenv('RESEND_API_KEY') ?: '')) !== '',
         ]);
     }
