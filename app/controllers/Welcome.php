@@ -9,12 +9,13 @@ class Welcome extends Controller
         header('Cache-Control: no-store');
         echo json_encode([
             'status' => 'ok',
-            'email_provider' => 'smtp',
+            'email_provider' => strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'smtp'))),
             'smtp_configured' => trim((string) (getenv('SMTP_USERNAME') ?: '')) !== ''
                 && trim((string) (getenv('SMTP_PASSWORD') ?: '')) !== '',
             'smtp_host' => trim((string) (getenv('SMTP_HOST') ?: 'smtp.gmail.com')) ?: 'smtp.gmail.com',
             'smtp_port' => (int) (getenv('SMTP_PORT') ?: 587),
             'smtp_secure' => strtolower(trim((string) (getenv('SMTP_SECURE') ?: 'tls'))),
+            'brevo_configured' => trim((string) (getenv('BREVO_API_KEY') ?: '')) !== '',
             'resend_configured' => trim((string) (getenv('RESEND_API_KEY') ?: '')) !== '',
         ]);
     }

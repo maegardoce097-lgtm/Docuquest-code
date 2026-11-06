@@ -558,6 +558,58 @@ class Docuquest_model extends Model
                 . 'Sign in: ' . $paymentUrl;
             $provider = 'smtp';
             error_log('DocuQuest email provider selected: ' . $provider);
+            if ($provider === 'brevo') {
+                $apiKey = trim((string) (getenv('BREVO_API_KEY') ?: ''));
+                if ($apiKey === '') {
+                    throw new RuntimeException('BREVO_API_KEY is required when EMAIL_PROVIDER=brevo.');
+                }
+
+                $from = trim((string) (getenv('MAIL_FROM_ADDRESS') ?: $username));
+                if ($from === '') {
+                    throw new RuntimeException('MAIL_FROM_ADDRESS is required when EMAIL_PROVIDER=brevo.');
+                }
+                $fromName = trim((string) (getenv('MAIL_FROM_NAME') ?: 'DocuQuest'));
+                $attachments = [];
+                foreach ($email->getAttachments() as $attachment) {
+                    $attachments[] = [
+                        'name' => $attachment[1] ?: $attachment[2],
+                        'content' => base64_encode((string) $attachment[0]),
+                    ];
+                }
+
+                $payload = [
+                    'sender' => ['email' => $from, 'name' => $fromName],
+                    'to' => [['email' => $recipient, 'name' => (string) ($request['full_name'] ?? '')]],
+                    'subject' => $email->Subject,
+                    'htmlContent' => $html,
+                    'textContent' => $email->AltBody,
+                ];
+                if ($attachments) {
+                    $payload['attachment'] = $attachments;
+                }
+
+                $handle = curl_init('https://api.brevo.com/v3/smtp/email');
+                curl_setopt_array($handle, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT => 20,
+                    CURLOPT_HTTPHEADER => [
+                        'api-key: ' . $apiKey,
+                        'Content-Type: application/json',
+                        'Accept: application/json',
+                    ],
+                ]);
+                $response = curl_exec($handle);
+                $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+                curl_close($handle);
+                if (!is_string($response) || $status < 200 || $status >= 300) {
+                    $detail = is_string($response) ? trim($response) : 'No response from Brevo.';
+                    throw new RuntimeException('Brevo HTTP ' . $status . ': ' . $detail);
+                }
+                return true;
+            }
             if ($provider === 'resend') {
                 $apiKey = trim((string) (getenv('RESEND_API_KEY') ?: ''));
                 if ($apiKey === '') {
