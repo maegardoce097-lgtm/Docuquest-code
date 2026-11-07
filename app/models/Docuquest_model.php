@@ -407,9 +407,16 @@ class Docuquest_model extends Model
             $email->setFrom($username, getenv('MAIL_FROM_NAME') ?: 'DocuQuest');
             $email->addAddress($recipient, $request['full_name'] ?? '');
             $email->Subject = 'DocuQuest request update - ' . $request['request_number'];
+            $attachmentName = static function ($name, $fallback) {
+                $name = basename(trim((string) $name));
+                return $name !== '' ? preg_replace('/[^A-Za-z0-9._ -]/', '-', $name) : $fallback;
+            };
             if (($payment['status'] ?? '') === 'paid') {
                 $receiptPdf = $this->renderPaymentReceiptPdf($request, $payment);
-                $receiptName = ($request['request_number'] ?? 'request') . '-payment-receipt.pdf';
+                $receiptName = $attachmentName(
+                    ($request['request_number'] ?? 'request') . '-payment-receipt.pdf',
+                    'payment-receipt.pdf'
+                );
                 $email->addStringAttachment($receiptPdf, $receiptName, 'base64', 'application/pdf');
             }
             $certificate = null;
@@ -422,7 +429,10 @@ class Docuquest_model extends Model
                 ) as $uploadedFile) {
                     $contents = $storage->get($uploadedFile['stored_name']);
                     if ($contents !== null) {
-                        $email->addStringAttachment($contents, $uploadedFile['original_name'], 'base64', $uploadedFile['mime_type'] ?: 'application/octet-stream');
+                        $originalName = $attachmentName($uploadedFile['original_name'] ?? '', 'submitted-requirement');
+                        $email->addStringAttachment($contents, $originalName, 'base64', $uploadedFile['mime_type'] ?: 'application/octet-stream');
+                    } else {
+                        error_log('DocuQuest completion requirement attachment could not be loaded: ' . ($uploadedFile['stored_name'] ?? 'unknown'));
                     }
                 }
             }
@@ -432,7 +442,10 @@ class Docuquest_model extends Model
                     $storage = new Document_storage();
                     $contents = $storage->get($certificate['stored_name']);
                     if ($contents !== null) {
-                        $email->addStringAttachment($contents, $certificate['original_name'], 'base64', 'application/pdf');
+                        $certificateName = $attachmentName($certificate['original_name'] ?? '', 'copy-certified.pdf');
+                        $email->addStringAttachment($contents, $certificateName, 'base64', 'application/pdf');
+                    } else {
+                        error_log('DocuQuest certified-copy attachment could not be loaded: ' . ($certificate['stored_name'] ?? 'unknown'));
                     }
                 }
             }
