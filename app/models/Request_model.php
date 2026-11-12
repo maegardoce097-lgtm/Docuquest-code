@@ -427,9 +427,6 @@ class Request_model extends Docuquest_model
         try {
             $username = trim(getenv('SMTP_USERNAME') ?: '');
             $password = preg_replace('/\s+/', '', getenv('SMTP_PASSWORD') ?: '');
-            if ($username === '' || $password === '') {
-                throw new RuntimeException('SMTP_USERNAME and SMTP_PASSWORD are required.');
-            }
 
             $survey = is_array($feedback['survey'] ?? null) ? $feedback['survey'] : [];
             $clientTypes = ['citizen' => 'Mamamayan', 'business' => 'Negosyo', 'government' => 'Pamahalaan'];
@@ -483,6 +480,109 @@ class Request_model extends Docuquest_model
                 $textRows[] = $label . ': ' . $value;
             }
 
+            $validRecipients = 0;
+            $emailRecipients = [];
+            foreach ($recipients as $recipient) {
+                $address = trim((string) ($recipient['email'] ?? ''));
+                if (filter_var($address, FILTER_VALIDATE_EMAIL)) {
+                    $emailRecipients[] = ['email' => $address, 'name' => (string) ($recipient['username'] ?? '')];
+                    $validRecipients++;
+                }
+            }
+            if ($validRecipients < 1) {
+                error_log('DocuQuest feedback email skipped because active administrator email addresses are invalid.');
+                return false;
+            }
+
+            $requestNumber = (string) ($request['request_number'] ?? '');
+            $requesterName = (string) ($request['full_name'] ?? '');
+            $subject = 'Bagong feedback sa DocuQuest - ' . $requestNumber;
+            $htmlBody = '<h2>Bagong Client Satisfaction Measurement response</h2>'
+                . '<p><strong>Kahilingan:</strong> ' . $escape($requestNumber) . '<br><strong>Kliyente:</strong> ' . $escape($requesterName) . '</p>'
+                . '<table style="width:100%;border-collapse:collapse">' . $htmlRows . '</table>';
+            $textBody = "Bagong Client Satisfaction Measurement response\nKahilingan: " . $requestNumber
+                . "\nKliyente: " . $requesterName . "\n\n" . implode("\n", $textRows);
+
+            $provider = strtolower(trim((string) (getenv('EMAIL_PROVIDER') ?: 'brevo')));
+            if ($provider === 'brevo') {
+                $apiKey = trim((string) (getenv('BREVO_API_KEY') ?: ''));
+                if ($apiKey === '') {
+                    throw new RuntimeException('BREVO_API_KEY is required when EMAIL_PROVIDER=brevo.');
+                }
+                $from = trim((string) (getenv('MAIL_FROM_ADDRESS') ?: $username));
+                if (!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+                    throw new RuntimeException('MAIL_FROM_ADDRESS must be valid when EMAIL_PROVIDER=brevo.');
+                }
+                $payload = [
+                    'sender' => ['email' => $from, 'name' => trim((string) (getenv('MAIL_FROM_NAME') ?: 'DocuQuest'))],
+                    'to' => $emailRecipients,
+                    'subject' => $subject,
+                    'htmlContent' => $htmlBody,
+                    'textContent' => $textBody,
+                ];
+                $handle = curl_init('https://api.brevo.com/v3/smtp/email');
+                curl_setopt_array($handle, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT => 20,
+                    CURLOPT_HTTPHEADER => [
+                        'api-key: ' . $apiKey,
+                        'Content-Type: application/json',
+                        'Accept: application/json',
+                    ],
+                ]);
+                $response = curl_exec($handle);
+                $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+                curl_close($handle);
+                if (!is_string($response) || $status < 200 || $status >= 300) {
+                    throw new RuntimeException('Brevo HTTP ' . $status . ': ' . (is_string($response) ? trim($response) : 'No response.'));
+                }
+                return true;
+            }
+
+            if ($provider === 'resend') {
+                $apiKey = trim((string) (getenv('RESEND_API_KEY') ?: ''));
+                if ($apiKey === '') {
+                    throw new RuntimeException('RESEND_API_KEY is required when EMAIL_PROVIDER=resend.');
+                }
+                $from = trim((string) (getenv('MAIL_FROM_ADDRESS') ?: $username));
+                if (!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+                    throw new RuntimeException('MAIL_FROM_ADDRESS must be valid when EMAIL_PROVIDER=resend.');
+                }
+                $fromName = trim((string) (getenv('MAIL_FROM_NAME') ?: 'DocuQuest'));
+                $payload = [
+                    'from' => $fromName !== '' ? $fromName . ' <' . $from . '>' : $from,
+                    'to' => array_column($emailRecipients, 'email'),
+                    'subject' => $subject,
+                    'html' => $htmlBody,
+                    'text' => $textBody,
+                ];
+                $handle = curl_init('https://api.resend.com/emails');
+                curl_setopt_array($handle, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT => 20,
+                    CURLOPT_HTTPHEADER => [
+                        'Authorization: Bearer ' . $apiKey,
+                        'Content-Type: application/json',
+                    ],
+                ]);
+                $response = curl_exec($handle);
+                $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+                curl_close($handle);
+                if (!is_string($response) || $status < 200 || $status >= 300) {
+                    throw new RuntimeException('Resend HTTP ' . $status . ': ' . (is_string($response) ? trim($response) : 'No response.'));
+                }
+                return true;
+            }
+
+            if ($username === '' || $password === '') {
+                throw new RuntimeException('SMTP_USERNAME and SMTP_PASSWORD are required when EMAIL_PROVIDER=smtp.');
+            }
             $email = new \PHPMailer\PHPMailer\PHPMailer(true);
             $email->isSMTP();
             $email->Host = trim((string) (getenv('SMTP_HOST') ?: 'smtp.gmail.com')) ?: 'smtp.gmail.com';
@@ -506,27 +606,12 @@ class Request_model extends Docuquest_model
             $email->CharSet = 'UTF-8';
             $email->isHTML(true);
             $email->setFrom($username, getenv('MAIL_FROM_NAME') ?: 'DocuQuest');
-            $validRecipients = 0;
-            foreach ($recipients as $recipient) {
-                $address = trim((string) ($recipient['email'] ?? ''));
-                if (filter_var($address, FILTER_VALIDATE_EMAIL)) {
-                    $email->addAddress($address, (string) ($recipient['username'] ?? ''));
-                    $validRecipients++;
-                }
+            foreach ($emailRecipients as $recipient) {
+                $email->addAddress($recipient['email'], $recipient['name']);
             }
-            if ($validRecipients < 1) {
-                error_log('DocuQuest feedback email skipped because active administrator email addresses are invalid.');
-                return false;
-            }
-
-            $requestNumber = (string) ($request['request_number'] ?? '');
-            $requesterName = (string) ($request['full_name'] ?? '');
-            $email->Subject = 'Bagong feedback sa DocuQuest - ' . $requestNumber;
-            $email->Body = '<h2>Bagong Client Satisfaction Measurement response</h2>'
-                . '<p><strong>Kahilingan:</strong> ' . $escape($requestNumber) . '<br><strong>Kliyente:</strong> ' . $escape($requesterName) . '</p>'
-                . '<table style="width:100%;border-collapse:collapse">' . $htmlRows . '</table>';
-            $email->AltBody = "Bagong Client Satisfaction Measurement response\nKahilingan: " . $requestNumber
-                . "\nKliyente: " . $requesterName . "\n\n" . implode("\n", $textRows);
+            $email->Subject = $subject;
+            $email->Body = $htmlBody;
+            $email->AltBody = $textBody;
             $email->send();
             return true;
         } catch (Throwable $exception) {
