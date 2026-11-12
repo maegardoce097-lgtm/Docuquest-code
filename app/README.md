@@ -20,7 +20,8 @@ DocuQuest uses LavaLust as its backend and React as its only UI. React source li
 14. For an existing database, run `app/database/migrations/010_request_requirement_uploads.sql` once to support individually uploaded files for each admin-set requirement. Fresh databases already get these columns from `app/database/docuquest.sql`.
 15. For an existing database, run `app/database/migrations/011_requirement_upload_reviews.sql` once to add pending, validated, and rejected states for requirement uploads. Previously verified requirement uploads are backfilled as validated. Fresh databases already get these columns from `app/database/docuquest.sql`.
 16. For an existing database, run `app/database/migrations/012_detailed_request_feedback.sql` once to add five separate requester experience ratings. Fresh databases already get these columns from `app/database/docuquest.sql`.
-17. Install and build React from the project root:
+17. For an existing database, run `app/database/migrations/013_arta_request_feedback.sql` once to store the expanded Citizen Satisfaction Measurement responses. Fresh databases already include this field in `app/database/docuquest.sql`.
+18. Install and build React from the project root:
 
 	```sh
 	cd frontend

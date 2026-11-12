@@ -125,32 +125,64 @@ class Request_api extends Docuquest_api
         $this->requireRole($user, 'user');
         $input = $this->api->body();
         $requestId = filter_var($input['request_id'] ?? null, FILTER_VALIDATE_INT);
-        $ratingKeys = [
-            'staff_service_rating',
-            'instructions_clarity_rating',
-            'status_updates_rating',
-            'processing_time_rating',
-            'overall_satisfaction_rating',
-        ];
-        $ratings = $input['ratings'] ?? null;
-        $validatedRatings = [];
-        $invalidRatings = !is_array($ratings);
-        if (!$invalidRatings) {
-            foreach ($ratingKeys as $key) {
-                $value = filter_var($ratings[$key] ?? null, FILTER_VALIDATE_INT);
-                if ($value === false || $value === null || $value < 1 || $value > 5) {
-                    $invalidRatings = true;
+        $survey = $input['survey'] ?? null;
+        $clientType = is_array($survey) ? ($survey['client_type'] ?? '') : '';
+        $sex = is_array($survey) ? ($survey['sex'] ?? '') : '';
+        $region = is_array($survey) ? ($survey['region'] ?? '') : '';
+        $contactEmail = is_array($survey) ? ($survey['email'] ?? '') : '';
+        $comment = is_array($survey) ? ($survey['suggestions'] ?? '') : '';
+        $ageValue = is_array($survey) && isset($survey['age']) && $survey['age'] !== ''
+            ? filter_var($survey['age'], FILTER_VALIDATE_INT)
+            : null;
+        $cc1 = is_array($survey) ? filter_var($survey['cc1'] ?? null, FILTER_VALIDATE_INT) : false;
+        $invalidSurvey = !is_array($survey)
+            || !in_array($clientType, ['citizen', 'business', 'government'], true)
+            || !in_array($sex, ['', 'male', 'female'], true)
+            || !is_string($region) || strlen(trim($region)) > 120
+            || !is_string($contactEmail) || strlen(trim($contactEmail)) > 255
+            || (trim($contactEmail) !== '' && !filter_var(trim($contactEmail), FILTER_VALIDATE_EMAIL))
+            || !is_string($comment) || strlen(trim($comment)) > 1000
+            || ($ageValue !== null && ($ageValue === false || $ageValue < 1 || $ageValue > 120))
+            || $cc1 === false || $cc1 < 1 || $cc1 > 4;
+        $cc2 = $cc1 === 4 ? null : (is_array($survey) ? filter_var($survey['cc2'] ?? null, FILTER_VALIDATE_INT) : false);
+        $cc3 = $cc1 === 4 ? null : (is_array($survey) ? filter_var($survey['cc3'] ?? null, FILTER_VALIDATE_INT) : false);
+        if ($cc1 !== 4 && ($cc2 === false || $cc2 === null || $cc2 < 1 || $cc2 > 5
+            || $cc3 === false || $cc3 === null || $cc3 < 1 || $cc3 > 4)) {
+            $invalidSurvey = true;
+        }
+
+        $sqdKeys = ['sqd0', 'sqd1', 'sqd2', 'sqd3', 'sqd4', 'sqd5', 'sqd6', 'sqd7', 'sqd8'];
+        $validatedSurvey = [];
+        $applicableRatings = 0;
+        if (is_array($survey)) {
+            foreach ($sqdKeys as $key) {
+                $value = filter_var($survey[$key] ?? null, FILTER_VALIDATE_INT);
+                if ($value === false || $value === null || $value < 0 || $value > 5) {
+                    $invalidSurvey = true;
                     break;
                 }
-                $validatedRatings[$key] = (int) $value;
+                $validatedSurvey[$key] = (int) $value;
+                $applicableRatings += $value > 0 ? 1 : 0;
             }
         }
-        $comment = $input['comment'] ?? '';
-        if ($requestId === false || $requestId === null || $requestId < 1
-            || $invalidRatings
-            || !is_string($comment) || strlen(trim($comment)) > 1000) {
-            $this->api->respond_error('Rate all five questions from 1 to 5 and enter a valid optional comment.', 422);
+        if ($applicableRatings < 1) {
+            $invalidSurvey = true;
         }
+        if ($requestId === false || $requestId === null || $requestId < 1 || $invalidSurvey) {
+            $this->api->respond_error('Sagutan nang wasto ang mga kinakailangang tanong sa Citizen’s Charter at SQD.', 422);
+        }
+
+        $validatedSurvey = array_merge($validatedSurvey, [
+            'client_type' => $clientType,
+            'sex' => $sex !== '' ? $sex : null,
+            'age' => $ageValue,
+            'region' => trim($region) !== '' ? trim($region) : null,
+            'cc1' => (int) $cc1,
+            'cc2' => $cc2 === null ? null : (int) $cc2,
+            'cc3' => $cc3 === null ? null : (int) $cc3,
+            'email' => trim($contactEmail) !== '' ? trim($contactEmail) : null,
+            'suggestions' => trim($comment),
+        ]);
 
         $request = $this->docuquest->findRequestForUser((int) $requestId, $user);
         if (!$request) {
@@ -166,8 +198,7 @@ class Request_api extends Docuquest_api
         $feedbackId = $this->docuquest->saveRequestFeedback(
             (int) $requestId,
             (int) $user['id'],
-            $validatedRatings,
-            trim($comment)
+            $validatedSurvey
         );
         if ($feedbackId < 1) {
             $this->api->respond_error('Your feedback could not be saved.', 500);
@@ -177,9 +208,11 @@ class Request_api extends Docuquest_api
             error_log('DocuQuest feedback was saved but could not be reloaded for request ' . (int) $requestId . '.');
             $this->api->respond_error('Your feedback was saved but could not be loaded. Please refresh the request.', 500);
         }
+        $emailSent = $this->docuquest->sendFeedbackNotificationEmail($request, $savedFeedback);
         $this->api->respond([
             'message' => 'Thank you for sharing your DocuQuest experience.',
             'feedback' => $savedFeedback,
+            'email_sent' => $emailSent,
         ], 201);
     }
 

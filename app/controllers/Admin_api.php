@@ -127,20 +127,15 @@ class Admin_api extends Docuquest_api
         $user = $this->authenticatedUser();
         $this->requireRole($user, 'admin');
         $feedback = $this->docuquest->getAllRequestFeedback();
-        $questionKeys = [
-            'staff_service_rating',
-            'instructions_clarity_rating',
-            'status_updates_rating',
-            'processing_time_rating',
-            'overall_satisfaction_rating',
-        ];
+        $questionKeys = ['sqd0', 'sqd1', 'sqd2', 'sqd3', 'sqd4', 'sqd5', 'sqd6', 'sqd7', 'sqd8'];
         $questionSummary = [];
         foreach ($questionKeys as $key) {
             $questionSummary[$key] = ['count' => 0, 'average' => 0, 'distribution' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]];
         }
         foreach ($feedback as $entry) {
+            $survey = is_array($entry['survey'] ?? null) ? $entry['survey'] : [];
             foreach ($questionKeys as $key) {
-                $questionRating = (int) ($entry[$key] ?? 0);
+                $questionRating = (int) ($survey[$key] ?? 0);
                 if (isset($questionSummary[$key]['distribution'][$questionRating])) {
                     $questionSummary[$key]['distribution'][$questionRating]++;
                     $questionSummary[$key]['count']++;

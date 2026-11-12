@@ -25,12 +25,17 @@ class Admin_model extends Request_model
 
     public function getAllRequestFeedback()
     {
-        return $this->db->table('request_feedback f')
-            ->select('f.id, f.request_id, f.user_id, f.rating, f.staff_service_rating, f.instructions_clarity_rating, f.status_updates_rating, f.processing_time_rating, f.overall_satisfaction_rating, f.comment, f.created_at, r.request_number, r.document_type, r.full_name, u.username')
+        $feedback = $this->db->table('request_feedback f')
+            ->select('f.id, f.request_id, f.user_id, f.rating, f.staff_service_rating, f.instructions_clarity_rating, f.status_updates_rating, f.processing_time_rating, f.overall_satisfaction_rating, f.comment, f.survey_json, f.created_at, r.request_number, r.document_type, r.full_name, u.username')
             ->inner_join('document_requests r', 'r.id = f.request_id')
             ->inner_join('users u', 'u.id = f.user_id')
             ->order_by('f.created_at', 'DESC')
             ->get_all();
+        foreach ($feedback as &$entry) {
+            $entry = $this->decodeFeedbackSurvey($entry);
+        }
+        unset($entry);
+        return $feedback;
     }
 
     public function saveRegistryReport($start, $end, array $requests, $adminId)

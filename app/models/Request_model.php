@@ -342,15 +342,24 @@ class Request_model extends Docuquest_model
 
     public function getRequestFeedback($requestId, $userId)
     {
-        return $this->db->table('request_feedback')
-            ->select('rating, staff_service_rating, instructions_clarity_rating, status_updates_rating, processing_time_rating, overall_satisfaction_rating, comment, created_at')
+        $feedback = $this->db->table('request_feedback')
+            ->select('rating, staff_service_rating, instructions_clarity_rating, status_updates_rating, processing_time_rating, overall_satisfaction_rating, comment, survey_json, created_at')
             ->where('request_id', (int) $requestId)
             ->where('user_id', (int) $userId)
             ->limit(1)
-            ->get() ?: null;
+            ->get();
+        return $feedback ? $this->decodeFeedbackSurvey($feedback) : null;
     }
 
-    public function saveRequestFeedback($requestId, $userId, array $ratings, $comment)
+    protected function decodeFeedbackSurvey(array $feedback)
+    {
+        $survey = json_decode((string) ($feedback['survey_json'] ?? ''), true);
+        $feedback['survey'] = is_array($survey) ? $survey : null;
+        unset($feedback['survey_json']);
+        return $feedback;
+    }
+
+    public function saveRequestFeedback($requestId, $userId, array $survey)
     {
         $request = $this->db->table('document_requests')
             ->select('request_number')
@@ -363,24 +372,35 @@ class Request_model extends Docuquest_model
 
         $this->db->transaction();
         try {
-            $rating = (int) round(array_sum($ratings) / count($ratings));
+            $scores = [];
+            foreach (['sqd0', 'sqd1', 'sqd2', 'sqd3', 'sqd4', 'sqd5', 'sqd6', 'sqd7', 'sqd8'] as $key) {
+                if ((int) ($survey[$key] ?? 0) > 0) {
+                    $scores[] = (int) $survey[$key];
+                }
+            }
+            $rating = count($scores) > 0 ? (int) round(array_sum($scores) / count($scores)) : 1;
+            $surveyJson = json_encode($survey, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($surveyJson === false) {
+                throw new RuntimeException('The feedback questionnaire could not be encoded.');
+            }
             $feedbackId = (int) $this->db->table('request_feedback')->insert([
                 'request_id' => (int) $requestId,
                 'user_id' => (int) $userId,
                 'rating' => $rating,
-                'staff_service_rating' => (int) $ratings['staff_service_rating'],
-                'instructions_clarity_rating' => (int) $ratings['instructions_clarity_rating'],
-                'status_updates_rating' => (int) $ratings['status_updates_rating'],
-                'processing_time_rating' => (int) $ratings['processing_time_rating'],
-                'overall_satisfaction_rating' => (int) $ratings['overall_satisfaction_rating'],
-                'comment' => $comment !== '' ? $comment : null,
+                'staff_service_rating' => (int) ($survey['sqd7'] ?? 0) ?: null,
+                'instructions_clarity_rating' => (int) ($survey['sqd4'] ?? 0) ?: null,
+                'status_updates_rating' => (int) ($survey['sqd2'] ?? 0) ?: null,
+                'processing_time_rating' => (int) ($survey['sqd1'] ?? 0) ?: null,
+                'overall_satisfaction_rating' => (int) ($survey['sqd0'] ?? 0) ?: null,
+                'comment' => ($survey['suggestions'] ?? '') !== '' ? $survey['suggestions'] : null,
+                'survey_json' => $surveyJson,
                 'created_at' => gmdate('Y-m-d H:i:s'),
             ]);
             if ($feedbackId > 0) {
                 $this->notifyAdmins(
                     (int) $requestId,
                     'New requester feedback',
-                    $request['request_number'] . ' received five feedback ratings with an overall score of ' . number_format(array_sum($ratings) / count($ratings), 2) . '/5. View the responses in Admin Feedback.'
+                    $request['request_number'] . ' received a Citizen Satisfaction Measurement response with an overall score of ' . number_format(array_sum($scores) / count($scores), 2) . '/5. View the responses in Admin Feedback.'
                 );
             }
             $this->db->commit();
@@ -388,6 +408,132 @@ class Request_model extends Docuquest_model
         } catch (Throwable $exception) {
             $this->db->roll_back();
             throw $exception;
+        }
+    }
+
+    public function sendFeedbackNotificationEmail(array $request, array $feedback)
+    {
+        $recipients = $this->db->table('users')
+            ->select('email, username')
+            ->where('role', 'admin')
+            ->where('is_active', 1)
+            ->get_all();
+        if (!$recipients) {
+            error_log('DocuQuest feedback email skipped because no active administrator email was found.');
+            return false;
+        }
+
+        $email = null;
+        try {
+            $username = trim(getenv('SMTP_USERNAME') ?: '');
+            $password = preg_replace('/\s+/', '', getenv('SMTP_PASSWORD') ?: '');
+            if ($username === '' || $password === '') {
+                throw new RuntimeException('SMTP_USERNAME and SMTP_PASSWORD are required.');
+            }
+
+            $survey = is_array($feedback['survey'] ?? null) ? $feedback['survey'] : [];
+            $clientTypes = ['citizen' => 'Mamamayan', 'business' => 'Negosyo', 'government' => 'Pamahalaan'];
+            $sexes = ['male' => 'Lalaki', 'female' => 'Babae'];
+            $cc1Answers = [
+                1 => 'Alam kung ano ang Citizen’s Charter at nakita ang charter ng tanggapan.',
+                2 => 'Alam kung ano ang Citizen’s Charter ngunit hindi nakita ang charter ng tanggapan.',
+                3 => 'Nalaman lamang ang tungkol dito nang makita ang charter ng tanggapan.',
+                4 => 'Hindi alam kung ano ito at walang nakitang charter sa tanggapan.',
+            ];
+            $cc2Answers = [1 => 'Madaling makita', 2 => 'Medyo madaling makita', 3 => 'Mahirap makita', 4 => 'Hindi talaga makita', 5 => 'Hindi naaangkop'];
+            $cc3Answers = [1 => 'Malaki ang naitulong', 2 => 'May naitulong', 3 => 'Hindi nakatulong', 4 => 'Hindi naaangkop'];
+            $sqdLabels = [
+                'sqd0' => 'Nasiyahan sa serbisyong natanggap',
+                'sqd1' => 'Makatwiran ang tagal ng pagproseso',
+                'sqd2' => 'Sinunod ang mga kinakailangan at hakbang',
+                'sqd3' => 'Madali at simple ang mga hakbang at pagbabayad',
+                'sqd4' => 'Madaling nahanap ang impormasyon',
+                'sqd5' => 'Makatwiran ang mga bayarin',
+                'sqd6' => 'Patas ang pagtrato sa lahat',
+                'sqd7' => 'Magalang at matulungin ang mga kawani',
+                'sqd8' => 'Nakuha ang kailangan o naipaliwanag ang pagtanggi',
+            ];
+            $ratingLabels = [0 => 'Hindi naaangkop', 1 => 'Lubos na hindi sumasang-ayon', 2 => 'Hindi sumasang-ayon', 3 => 'Hindi sumasang-ayon o sumasang-ayon', 4 => 'Sumasang-ayon', 5 => 'Lubos na sumasang-ayon'];
+            $rows = [
+                ['Uri ng kliyente', $clientTypes[$survey['client_type'] ?? ''] ?? 'Hindi nakatala'],
+                ['Kasarian', $sexes[$survey['sex'] ?? ''] ?? 'Hindi ibinahagi'],
+                ['Edad', $survey['age'] ?? 'Hindi ibinahagi'],
+                ['Rehiyon ng tirahan', $survey['region'] ?? 'Hindi ibinahagi'],
+                ['Serbisyong ginamit', $request['document_type'] ?? ''],
+                ['CC1: Kaalaman sa Citizen’s Charter', $cc1Answers[(int) ($survey['cc1'] ?? 0)] ?? 'Hindi nakatala'],
+                ['CC2: Pagkakita sa Citizen’s Charter', $cc2Answers[(int) ($survey['cc2'] ?? 0)] ?? 'Hindi naaangkop'],
+                ['CC3: Naitulong ng Citizen’s Charter', $cc3Answers[(int) ($survey['cc3'] ?? 0)] ?? 'Hindi naaangkop'],
+            ];
+            foreach ($sqdLabels as $key => $label) {
+                $value = (int) ($survey[$key] ?? 0);
+                $rows[] = [strtoupper($key) . ': ' . $label, $ratingLabels[$value] ?? 'Hindi nakatala'];
+            }
+            $rows[] = ['Mga mungkahi', ($survey['suggestions'] ?? '') !== '' ? $survey['suggestions'] : 'Walang ibinigay na mungkahi.'];
+            if (!empty($survey['email'])) {
+                $rows[] = ['Email na ibinahagi', $survey['email']];
+            }
+
+            $escape = static function ($value) {
+                return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            };
+            $htmlRows = '';
+            $textRows = [];
+            foreach ($rows as [$label, $value]) {
+                $htmlRows .= '<tr><th style="padding:8px;text-align:left;border-bottom:1px solid #ddd">' . $escape($label) . '</th><td style="padding:8px;border-bottom:1px solid #ddd">' . nl2br($escape($value)) . '</td></tr>';
+                $textRows[] = $label . ': ' . $value;
+            }
+
+            $email = new \PHPMailer\PHPMailer\PHPMailer(true);
+            $email->isSMTP();
+            $email->Host = trim((string) (getenv('SMTP_HOST') ?: 'smtp.gmail.com')) ?: 'smtp.gmail.com';
+            $email->SMTPAuth = true;
+            $email->SMTPAutoTLS = true;
+            $email->AuthType = 'LOGIN';
+            $email->Username = $username;
+            $email->Password = $password;
+            $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+            $smtpSecure = strtolower(trim((string) (getenv('SMTP_SECURE') ?: ($smtpPort === 465 ? 'ssl' : 'tls'))));
+            if ($smtpPort === 465 || $smtpSecure === 'ssl') {
+                $smtpPort = 465;
+                $email->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                $email->SMTPAutoTLS = false;
+            } else {
+                $smtpPort = 587;
+                $email->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            }
+            $email->Port = $smtpPort;
+            $email->Timeout = (int) (getenv('SMTP_TIMEOUT') ?: 30);
+            $email->CharSet = 'UTF-8';
+            $email->isHTML(true);
+            $email->setFrom($username, getenv('MAIL_FROM_NAME') ?: 'DocuQuest');
+            $validRecipients = 0;
+            foreach ($recipients as $recipient) {
+                $address = trim((string) ($recipient['email'] ?? ''));
+                if (filter_var($address, FILTER_VALIDATE_EMAIL)) {
+                    $email->addAddress($address, (string) ($recipient['username'] ?? ''));
+                    $validRecipients++;
+                }
+            }
+            if ($validRecipients < 1) {
+                error_log('DocuQuest feedback email skipped because active administrator email addresses are invalid.');
+                return false;
+            }
+
+            $requestNumber = (string) ($request['request_number'] ?? '');
+            $requesterName = (string) ($request['full_name'] ?? '');
+            $email->Subject = 'Bagong feedback sa DocuQuest - ' . $requestNumber;
+            $email->Body = '<h2>Bagong Client Satisfaction Measurement response</h2>'
+                . '<p><strong>Kahilingan:</strong> ' . $escape($requestNumber) . '<br><strong>Kliyente:</strong> ' . $escape($requesterName) . '</p>'
+                . '<table style="width:100%;border-collapse:collapse">' . $htmlRows . '</table>';
+            $email->AltBody = "Bagong Client Satisfaction Measurement response\nKahilingan: " . $requestNumber
+                . "\nKliyente: " . $requesterName . "\n\n" . implode("\n", $textRows);
+            $email->send();
+            return true;
+        } catch (Throwable $exception) {
+            $mailerError = $email instanceof \PHPMailer\PHPMailer\PHPMailer ? trim((string) $email->ErrorInfo) : '';
+            error_log('DocuQuest feedback email failed: ' . $exception->getMessage()
+                . ($mailerError !== '' ? ' | SMTP: ' . $mailerError : ''));
+            return false;
         }
     }
 

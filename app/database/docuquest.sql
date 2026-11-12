@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS `request_feedback` (
   `processing_time_rating` tinyint unsigned DEFAULT NULL,
   `overall_satisfaction_rating` tinyint unsigned DEFAULT NULL,
   `comment` varchar(1000) DEFAULT NULL,
+  `survey_json` mediumtext DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `request_feedback_request_unique` (`request_id`),
