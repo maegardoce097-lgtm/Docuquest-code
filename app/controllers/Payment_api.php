@@ -114,6 +114,9 @@ class Payment_api extends Docuquest_api
                 $payment = $this->docuquest->getRequestPayment($requestId);
                 $this->api->respond(['payment' => $this->publicPayment($payment), 'message' => 'Payment is already confirmed.']);
             }
+            if (($attributes['payment_intent']['attributes']['status'] ?? '') === 'processing') {
+                $this->api->respond_error('A payment attempt is still processing with PayMongo. Check its status before trying again.', 409);
+            }
             if (($attributes['status'] ?? '') === 'active' && !empty($attributes['checkout_url'])) {
                 $this->api->respond(['checkout_url' => $attributes['checkout_url']]);
             }
