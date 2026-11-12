@@ -11,7 +11,7 @@ This repository deploys the PHP API only. The React frontend is maintained in a 
 ## Deploy
 
 1. In Render, create a Blueprint from the `Docuquest-Backend` GitHub repository. Render reads `render.yaml`, builds `Dockerfile`, and checks `/healthz`.
-2. Set `APP_BASE_URL` to the backend's HTTPS origin, for example `https://docuquest-backend.onrender.com`.
+2. Set `APP_BASE_URL` to the backend's HTTPS origin, for example `https://docuquest-code.onrender.com`. Set `FRONTEND_BASE_URL` to the frontend's HTTPS origin, `https://docuquest-design.onrender.com`; PayMongo success and cancel returns use this frontend URL.
 3. Configure the external MySQL connection: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`. Keep `DB_DRIVER=mysql`. If the provider requires a CA certificate, add it as a Render secret file and set `DB_SSL_CA` to its mounted path, such as `/etc/secrets/mysql-ca.pem`.
 4. Configure S3: set `DOCUMENT_STORAGE_BUCKET`, `DOCUMENT_STORAGE_REGION`, and the access keys. For a compatible provider such as Cloudflare R2, set `DOCUMENT_STORAGE_ENDPOINT`; endpoint path-style mode defaults to enabled when the variable is blank. Keep the bucket private.
 5. In Render, review the generated `APP_KEY`, `JWT_SECRET`, and `REFRESH_TOKEN_KEY`. Keep them stable after users have accounts; rotating JWT/refresh secrets invalidates active sessions.
